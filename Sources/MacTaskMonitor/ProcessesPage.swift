@@ -99,17 +99,7 @@ struct ProcessesPage: View {
             }
 
             if let process = visible.first(where: { $0.id == selection }) {
-                MonitorCard {
-                    VStack(alignment: .leading, spacing: 7) {
-                        DetailLine(label: "可执行文件", value: process.command.isEmpty ? "—" : process.command)
-                        HStack(alignment: .firstTextBaseline, spacing: 18) {
-                            DetailLine(label: "父进程 PID", value: String(process.parentPID))
-                            if let seconds = process.elapsedSeconds {
-                                DetailLine(label: "启动至今", value: elapsed(seconds))
-                            }
-                        }
-                    }
-                }
+                ProcessDetails(process: process, parent: snapshot?.processes.first { $0.pid == process.parentPID })
             }
 
             HStack(spacing: 12) {
@@ -127,6 +117,13 @@ struct ProcessesPage: View {
             while !Task.isCancelled {
                 let sample = await Task.detached(priority: .utility) { ProcessMonitor.sample() }.value
                 guard !Task.isCancelled else { return }
+                if let id = selection {
+                    let previous = snapshot?.processes.first { $0.id == id }
+                    let current = sample.processes.first { $0.id == id }
+                    if current == nil || current?.command != previous?.command || current?.uid != previous?.uid {
+                        selection = nil
+                    }
+                }
                 snapshot = sample
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
@@ -137,13 +134,5 @@ struct ProcessesPage: View {
 
     private func memory(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .memory)
-    }
-
-    private func elapsed(_ seconds: Int) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.day, .hour, .minute, .second]
-        formatter.unitsStyle = .abbreviated
-        formatter.maximumUnitCount = 2
-        return formatter.string(from: TimeInterval(seconds)) ?? "\(seconds) 秒"
     }
 }
