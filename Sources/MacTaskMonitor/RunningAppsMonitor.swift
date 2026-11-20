@@ -3,6 +3,20 @@ import Darwin
 import Foundation
 
 struct RunningApp: Identifiable, Sendable {
+    struct ID: Hashable, Sendable {
+        fileprivate let pid: pid_t
+        fileprivate let instance: NSRunningApplication
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.pid == rhs.pid && lhs.instance.isEqual(rhs.instance)
+        }
+
+        func hash(into hasher: inout Hasher) {
+            // Capture the PID for hashing so subsequent AppKit changes cannot change this value.
+            hasher.combine(pid)
+        }
+    }
+
     enum State: String, Sendable {
         case active = "前台"
         case background = "后台"
@@ -10,9 +24,9 @@ struct RunningApp: Identifiable, Sendable {
         case starting = "启动中"
     }
 
-    var id: Int { pid }
+    var pid: Int { Int(id.pid) }
 
-    let pid: Int
+    let id: ID
     let name: String
     let bundleIdentifier: String?
     let bundleURL: URL?
@@ -26,6 +40,12 @@ struct RunningAppsSnapshot: Sendable {
     let apps: [RunningApp]
     let sampledAt: Date
     let notice: String?
+}
+
+enum RunningAppTerminationResult: Equatable, Sendable {
+    case requestSubmitted
+    case alreadyExited
+    case systemRejected
 }
 
 enum RunningAppsMonitor {
@@ -42,7 +62,8 @@ enum RunningAppsMonitor {
         let totals = measure(snapshot.processes, for: steady, separating: before + current)
         let apps = current.map { app in
             let usage = totals[app.pid]
-            return RunningApp(pid: app.pid, name: app.name, bundleIdentifier: app.instance.bundleIdentifier,
+            return RunningApp(id: .init(pid: pid_t(app.pid), instance: app.instance),
+                              name: app.name, bundleIdentifier: app.instance.bundleIdentifier,
                               bundleURL: app.bundleURL, state: app.state(asOf: snapshot.sampledAt),
                               processCount: usage?.count, cpuPercent: usage?.cpu, residentBytes: usage?.memory)
         }.sorted {
@@ -50,6 +71,21 @@ enum RunningAppsMonitor {
             return order == .orderedSame ? $0.pid < $1.pid : order == .orderedAscending
         }
         return RunningAppsSnapshot(apps: apps, sampledAt: snapshot.sampledAt, notice: snapshot.notice)
+    }
+
+    @MainActor
+    static func forceTerminate(_ id: RunningApp.ID) -> RunningAppTerminationResult {
+        guard isRunning(id) else { return .alreadyExited }
+        // Force the selected AppKit instance to quit. The result only acknowledges the request.
+        if id.instance.forceTerminate() { return .requestSubmitted }
+        return isRunning(id) ? .systemRejected : .alreadyExited
+    }
+
+    @MainActor
+    static func isRunning(_ id: RunningApp.ID) -> Bool {
+        guard !id.instance.isTerminated, id.instance.processIdentifier == id.pid,
+              let current = NSRunningApplication(processIdentifier: id.pid), !current.isTerminated else { return false }
+        return current.isEqual(id.instance)
     }
 
     private struct Application {

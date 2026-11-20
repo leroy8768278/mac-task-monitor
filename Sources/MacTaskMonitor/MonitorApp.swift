@@ -44,10 +44,10 @@ struct MonitorApp: App {
                         Menu {
                             KeepAwakeToggle(awake: delegate.awake)
                         } label: {
-                            Label("工具", systemImage: "wrench.and.screwdriver")
+                            Label(MonitorSection.tools.title, systemImage: MonitorSection.tools.icon)
                         }
-                        .accessibilityLabel("工具")
-                        .help("工具")
+                        .accessibilityLabel(MonitorSection.tools.title)
+                        .help(MonitorSection.tools.title)
                     }
                 }
         }
@@ -69,7 +69,7 @@ struct MonitorApp: App {
 }
 
 enum MonitorSection: String, Identifiable, CaseIterable {
-    case device, processes, runningApps, tasks, watchdog, tools
+    case device, runningApps, processes, tasks, watchdog, tools
 
     var id: Self { self }
 
@@ -77,10 +77,10 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "设备状态"
         case .processes: "运行进程"
-        case .runningApps: "运行中的 App"
+        case .runningApps: "运行软件"
         case .tasks: "计划任务"
         case .watchdog: "应用守护"
-        case .tools: "工具"
+        case .tools: "常用工具"
         }
     }
 

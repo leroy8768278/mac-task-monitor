@@ -13,7 +13,7 @@ struct ToolsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeading(title: "工具", subtitle: "管理 Mac 的空闲休眠与显示器") { EmptyView() }
+            PageHeading(title: MonitorSection.tools.title, subtitle: "管理 Mac 的空闲休眠与显示器") { EmptyView() }
             MonitorCard {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
