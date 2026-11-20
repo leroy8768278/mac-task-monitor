@@ -12,14 +12,44 @@ enum MacTaskMonitorEntry {
     }
 }
 
+@MainActor
+private final class MonitorAppDelegate: NSObject, NSApplicationDelegate {
+    let runtime = MonitorRuntime()
+    let awake = AwakeController()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        runtime.start()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        awake.stopForTermination()
+        runtime.stop()
+    }
+}
+
+@MainActor
 struct MonitorApp: App {
+    @NSApplicationDelegateAdaptor(MonitorAppDelegate.self) private var delegate
     @State private var section = MonitorSection.device
 
     var body: some Scene {
         Window("Mac 任务台", id: "monitor") {
-            MonitorWindow(section: $section)
+            MonitorWindow(section: $section, runtime: delegate.runtime, awake: delegate.awake)
                 .frame(minWidth: 790, minHeight: 570)
                 .tint(MonitorTint.accent)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            KeepAwakeToggle(awake: delegate.awake)
+                        } label: {
+                            Label("工具", systemImage: "wrench.and.screwdriver")
+                        }
+                        .accessibilityLabel("工具")
+                        .help("工具")
+                    }
+                }
         }
         .defaultSize(width: 1060, height: 700)
         .commands {
@@ -30,11 +60,16 @@ struct MonitorApp: App {
                 }
             }
         }
+
+        MenuBarExtra("Mac 任务台", systemImage: "waveform.path.ecg") {
+            MonitorMenu(runtime: delegate.runtime, awake: delegate.awake)
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 
 enum MonitorSection: String, Identifiable, CaseIterable {
-    case device, processes, tasks, watchdog
+    case device, processes, runningApps, tasks, watchdog, tools
 
     var id: Self { self }
 
@@ -42,8 +77,10 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "设备状态"
         case .processes: "运行进程"
+        case .runningApps: "运行中的 App"
         case .tasks: "计划任务"
         case .watchdog: "应用守护"
+        case .tools: "工具"
         }
     }
 
@@ -51,8 +88,10 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "waveform.path.ecg"
         case .processes: "list.bullet.rectangle"
+        case .runningApps: "macwindow.on.rectangle"
         case .tasks: "calendar.badge.clock"
         case .watchdog: "shield.lefthalf.filled"
+        case .tools: "wrench.and.screwdriver"
         }
     }
 
@@ -60,8 +99,10 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "1"
         case .processes: "4"
+        case .runningApps: "6"
         case .tasks: "2"
         case .watchdog: "3"
+        case .tools: "5"
         }
     }
 }

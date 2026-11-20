@@ -52,6 +52,8 @@ struct DevicePage: View {
             VStack(spacing: 0) {
                 summaryLink(.processes, summary: "查看 CPU、内存与 PID")
                 Divider().padding(.horizontal, 16)
+                summaryLink(.runningApps, summary: "按 App 查看状态与占用")
+                Divider().padding(.horizontal, 16)
                 summaryLink(.tasks, summary: taskSummary)
                 Divider().padding(.horizontal, 16)
                 summaryLink(.watchdog, summary: watchdogSummary)
