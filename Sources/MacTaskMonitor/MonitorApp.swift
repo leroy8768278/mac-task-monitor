@@ -34,13 +34,14 @@ struct MonitorApp: App {
 }
 
 enum MonitorSection: String, Identifiable, CaseIterable {
-    case device, tasks, watchdog
+    case device, processes, tasks, watchdog
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .device: "设备状态"
+        case .processes: "运行进程"
         case .tasks: "计划任务"
         case .watchdog: "应用守护"
         }
@@ -49,6 +50,7 @@ enum MonitorSection: String, Identifiable, CaseIterable {
     var icon: String {
         switch self {
         case .device: "waveform.path.ecg"
+        case .processes: "list.bullet.rectangle"
         case .tasks: "calendar.badge.clock"
         case .watchdog: "shield.lefthalf.filled"
         }
@@ -57,6 +59,7 @@ enum MonitorSection: String, Identifiable, CaseIterable {
     var shortcut: KeyEquivalent {
         switch self {
         case .device: "1"
+        case .processes: "4"
         case .tasks: "2"
         case .watchdog: "3"
         }

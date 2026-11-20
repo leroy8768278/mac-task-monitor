@@ -20,16 +20,10 @@ struct MonitorWindow: View {
     var body: some View {
         HStack(spacing: 0) {
             MonitorSidebar(section: Binding(get: { section }, set: { navigate($0) }))
-            ScrollView {
-                page
-                    .frame(maxWidth: 1080)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 23)
-                    .frame(maxWidth: .infinity, alignment: .top)
-            }
-            .id(section)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(MonitorTint.canvas)
+            page
+                .id(section)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(MonitorTint.canvas)
         }
         .task { await sampleHealth() }
         .task { await scanPeriodically() }
@@ -39,18 +33,38 @@ struct MonitorWindow: View {
     private var page: some View {
         switch section {
         case .device:
-            DevicePage(deviceName: deviceName,
-                       snapshot: health, cpuHistory: cpuHistory,
-                       taskSummary: taskSummary, watchdogSummary: watchdogSummary,
-                       navigate: { navigate($0) })
+            scrollPage {
+                DevicePage(deviceName: deviceName,
+                           snapshot: health, cpuHistory: cpuHistory,
+                           taskSummary: taskSummary, watchdogSummary: watchdogSummary,
+                           navigate: { navigate($0) })
+            }
+        case .processes:
+            ProcessesPage()
+                .padding(.horizontal, 24)
+                .padding(.vertical, 23)
         case .tasks:
-            TasksPage(snapshot: tasks, isScanning: isScanning, focusTask: taskFocus) {
-                Task { await refreshTasks() }
+            scrollPage {
+                TasksPage(snapshot: tasks, isScanning: isScanning, focusTask: taskFocus) {
+                    Task { await refreshTasks() }
+                }
             }
         case .watchdog:
-            WatchdogPage(watchdog: watchdog, existingMT5Rule: existingMT5Rule, didScan: tasks != nil) { label in
-                navigate(.tasks, focus: label)
+            scrollPage {
+                WatchdogPage(watchdog: watchdog, existingMT5Rule: existingMT5Rule, didScan: tasks != nil) { label in
+                    navigate(.tasks, focus: label)
+                }
             }
+        }
+    }
+
+    private func scrollPage<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            content()
+                .frame(maxWidth: 1080)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 23)
+                .frame(maxWidth: .infinity, alignment: .top)
         }
     }
 
