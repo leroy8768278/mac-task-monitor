@@ -39,17 +39,6 @@ struct MonitorApp: App {
             MonitorWindow(section: $section, runtime: delegate.runtime, awake: delegate.awake)
                 .frame(minWidth: 790, minHeight: 570)
                 .tint(MonitorTint.accent)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            KeepAwakeToggle(awake: delegate.awake)
-                        } label: {
-                            Label(MonitorSection.tools.title, systemImage: MonitorSection.tools.icon)
-                        }
-                        .accessibilityLabel(MonitorSection.tools.title)
-                        .help(MonitorSection.tools.title)
-                    }
-                }
         }
         .defaultSize(width: 1060, height: 700)
         .commands {
