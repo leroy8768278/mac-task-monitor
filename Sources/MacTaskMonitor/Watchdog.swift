@@ -110,14 +110,32 @@ final class Watchdog: ObservableObject {
             try WatchdogStore.write(updated, to: WatchdogStore.preferencesURL)
             enabledAt = enabled ? Date() : nil
 
-            if !enabled, service.status == .enabled || service.status == .requiresApproval {
-                try service.unregister()
-            }
+            if !enabled { try unregisterBackgroundService() }
             refresh()
         } catch {
             if registeredNow { try? service.unregister() }
             refresh()
             reportError(enabled ? "无法开启守护" : "关闭守护时遇到问题", error.localizedDescription)
+        }
+    }
+
+    func deleteRule() {
+        operationError = nil
+        let previous = WatchdogStore.readPreferences() ?? preferences
+        do {
+            if previous.enabled {
+                try WatchdogStore.write(
+                    WatchdogPreferences(target: previous.target, enabled: false),
+                    to: WatchdogStore.preferencesURL
+                )
+            }
+            try unregisterBackgroundService()
+            try WatchdogStore.removeRule()
+            enabledAt = nil
+            refresh()
+        } catch {
+            refresh()
+            reportError("无法删除守护规则", error.localizedDescription)
         }
     }
 
@@ -227,6 +245,11 @@ final class Watchdog: ObservableObject {
         let error = Status(title: title, detail: detail, kind: .failure)
         operationError = error
         publish(error)
+    }
+
+    private func unregisterBackgroundService() throws {
+        let state = service.status
+        if state == .enabled || state == .requiresApproval { try service.unregister() }
     }
 
     private func publish(_ update: Status) {
@@ -347,6 +370,17 @@ private enum WatchdogStore {
     static func write<Value: Encodable>(_ value: Value, to url: URL) throws {
         try createDirectory()
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
+    }
+
+    static func removeRule() throws {
+        for url in [snapshotURL, preferencesURL] {
+            if Darwin.unlink(url.path) != 0 {
+                let failure = errno
+                if failure != ENOENT {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
+                }
+            }
+        }
     }
 
     static func acquireAgentLock() -> Int32? {

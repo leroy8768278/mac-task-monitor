@@ -9,11 +9,16 @@ struct MonitorWindow: View {
     @State private var cpuHistory: [Double] = []
     @State private var tasks: ScheduledTaskSnapshot?
     @State private var isScanning = false
+    @State private var scanAgain = false
     @State private var taskFocus: String?
+    @State private var legacyGuardBusy = false
+    @State private var legacyGuardError: String?
 
     private var existingMT5Rule: ScheduledTask? {
-        tasks?.tasks.first { task in
-            task.label == "local.mt5.keepalive" && (task.status == .loaded || task.status == .running)
+        guard let tasks else { return nil }
+        let rules = tasks.tasks.filter { $0.label == LegacyMT5Guard.label }
+        return rules.first(where: LegacyMT5Guard.matches) ?? rules.first { rule in
+            rule.status == .loaded || rule.status == .running
         }
     }
 
@@ -51,7 +56,9 @@ struct MonitorWindow: View {
             }
         case .watchdog:
             scrollPage {
-                WatchdogPage(watchdog: watchdog, existingMT5Rule: existingMT5Rule, didScan: tasks != nil) { label in
+                WatchdogPage(watchdog: watchdog, existingMT5Rule: existingMT5Rule, didScan: tasks != nil,
+                             legacyBusy: legacyGuardBusy || isScanning, legacyError: legacyGuardError,
+                             changeLegacy: { action in Task { await changeLegacyGuard(action) } }) { label in
                     navigate(.tasks, focus: label)
                 }
             }
@@ -81,6 +88,7 @@ struct MonitorWindow: View {
 
     private var watchdogSummary: String {
         if watchdog.isEnabled { return watchdog.status.title }
+        if existingMT5Rule?.status == .disabled { return "MT5 守护已停用" }
         if existingMT5Rule != nil { return "已发现 MT5 守护规则" }
         return "未启用"
     }
@@ -109,10 +117,29 @@ struct MonitorWindow: View {
         }
     }
 
-    private func refreshTasks() async {
-        guard !isScanning else { return }
+    private func refreshTasks(afterGuardChange: Bool = false) async {
+        if isScanning {
+            if afterGuardChange { scanAgain = true }
+            return
+        }
         isScanning = true
         defer { isScanning = false }
-        tasks = await Task.detached(priority: .utility) { TaskScanner.scan() }.value
+        repeat {
+            scanAgain = false
+            tasks = await Task.detached(priority: .utility) { TaskScanner.scan() }.value
+        } while scanAgain
+    }
+
+    private func changeLegacyGuard(_ action: LegacyMT5Guard.Action) async {
+        guard !legacyGuardBusy else { return }
+        legacyGuardBusy = true
+        legacyGuardError = nil
+        defer { legacyGuardBusy = false }
+        do {
+            try await Task.detached(priority: .userInitiated) { try LegacyMT5Guard.perform(action) }.value
+        } catch {
+            legacyGuardError = error.localizedDescription
+        }
+        await refreshTasks(afterGuardChange: true)
     }
 }

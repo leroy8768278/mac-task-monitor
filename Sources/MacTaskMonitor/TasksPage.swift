@@ -147,15 +147,7 @@ struct TasksPage: View {
 
             if expandedTask == task.id {
                 Divider().padding(.horizontal, 13)
-                VStack(alignment: .leading, spacing: 9) {
-                    DetailLine(label: "触发规则", value: task.schedule)
-                    if !task.command.isEmpty { DetailLine(label: "执行命令", value: task.command) }
-                    if let path = task.path { DetailLine(label: "配置路径", value: path) }
-                    if let domain = task.domain { DetailLine(label: "launchd 域", value: domain) }
-                    if let pid = task.pid { DetailLine(label: "进程 PID", value: String(pid)) }
-                    if let lastExit = task.lastExitStatus { DetailLine(label: "上次退出码", value: String(lastExit)) }
-                }
-                .padding(13)
+                TaskDetails(task: task)
             }
         }
         .background(MonitorTint.card, in: RoundedRectangle(cornerRadius: 11))

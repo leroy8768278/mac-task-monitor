@@ -28,6 +28,10 @@ struct ScheduledTask: Identifiable, Sendable {
     let domain: String?
     let isScheduled: Bool
     let isAppleService: Bool
+    var timingTriggers: [TaskTimingTrigger] = []
+    var executable: String? = nil
+    // ProgramArguments preserves the launchd argv, including argv[0].
+    var arguments: [String] = []
 }
 
 struct ScheduledTaskSnapshot: Sendable {
@@ -66,7 +70,9 @@ enum TaskScanner {
                     lastExitStatus: service.lastExitStatus, schedule: definition?.schedule ?? "未读取到触发配置",
                     command: definition?.command ?? "", path: definition?.path, domain: domain.name,
                     isScheduled: definition?.isScheduled ?? false,
-                    isAppleService: isAppleService(service.label, path: definition?.path)
+                    isAppleService: isAppleService(service.label, path: definition?.path),
+                    timingTriggers: definition?.timingTriggers ?? [],
+                    executable: definition?.executable, arguments: definition?.arguments ?? []
                 ))
             }
         }
@@ -84,7 +90,9 @@ enum TaskScanner {
                 command: definition.command, path: definition.path,
                 domain: candidates.count == 1 ? candidates.first?.name : nil,
                 isScheduled: definition.isScheduled,
-                isAppleService: isAppleService(definition.identity.label, path: definition.path)
+                isAppleService: isAppleService(definition.identity.label, path: definition.path),
+                timingTriggers: definition.timingTriggers,
+                executable: definition.executable, arguments: definition.arguments
             ))
         }
 
@@ -106,6 +114,9 @@ enum TaskScanner {
         let path: String
         let schedule: String
         let command: String
+        let timingTriggers: [TaskTimingTrigger]
+        let executable: String?
+        let arguments: [String]
         let isScheduled: Bool
         let disabledByDefault: Bool
         let sessionTypes: [String]
@@ -245,14 +256,18 @@ enum TaskScanner {
             triggers.append("按需触发")
         }
 
-        var command = plist["ProgramArguments"] as? [String] ?? []
-        if let executable = (plist["Program"] ?? plist["BundleProgram"]) as? String {
+        let arguments = plist["ProgramArguments"] as? [String] ?? []
+        let declaredExecutable = (plist["Program"] ?? plist["BundleProgram"]) as? String
+        var command = arguments
+        if let executable = declaredExecutable {
             if command.isEmpty { command.append(executable) } else { command[0] = executable }
         }
         return Definition(
             identity: Identity(source: source, label: label), path: url.path,
             schedule: triggers.isEmpty ? "无显式定时配置" : triggers.joined(separator: " · "),
             command: command.map(quoteArgument).joined(separator: " "),
+            timingTriggers: TaskTimingTrigger.launchd(plist),
+            executable: declaredExecutable ?? arguments.first, arguments: arguments,
             isScheduled: hasInterval || !intervals.isEmpty,
             disabledByDefault: (plist["Disabled"] as? Bool) == true,
             sessionTypes: (plist["LimitLoadToSessionType"] as? [String]) ?? (plist["LimitLoadToSessionType"] as? String).map { [$0] } ?? []

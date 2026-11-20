@@ -1,10 +1,29 @@
 import SwiftUI
 
+@MainActor
 struct WatchdogPage: View {
+    private enum Deletion: String, Identifiable {
+        case appRule, mt5Rule
+
+        var id: Self { self }
+
+        var message: String {
+            switch self {
+            case .appRule: "将停止自动重启并移除这条守护规则。已打开的应用可以继续运行。"
+            case .mt5Rule: "将停止这条规则的自动重启和终端健康检查，并把配置移到废纸篓。已打开的 MT5 可以继续运行。"
+            }
+        }
+    }
+
     @ObservedObject var watchdog: Watchdog
     let existingMT5Rule: ScheduledTask?
     let didScan: Bool
+    let legacyBusy: Bool
+    let legacyError: String?
+    let changeLegacy: (LegacyMT5Guard.Action) -> Void
     let revealTask: (String) -> Void
+
+    @State private var deletion: Deletion?
 
     private var isMT5Selected: Bool {
         guard let url = watchdog.targetURL else { return false }
@@ -16,21 +35,12 @@ struct WatchdogPage: View {
             PageHeading(title: "应用守护", subtitle: "在当前用户登录期间重新打开退出的应用") { EmptyView() }
 
             if let rule = existingMT5Rule {
-                MonitorCard {
-                    HStack(alignment: .center, spacing: 12) {
-                        Image(systemName: "checkmark.shield")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(MonitorTint.accent)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("已发现 MT5 守护规则").font(.system(size: 13, weight: .semibold))
-                            Text("\(rule.label) · \(rule.schedule) · \(rule.status.rawValue)")
-                                .font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("查看任务") { revealTask(rule.label) }
-                    }
-                }
+                legacyRuleCard(rule)
+            }
+            if let legacyError {
+                Label(legacyError, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 12)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             MonitorCard {
@@ -67,10 +77,16 @@ struct WatchdogPage: View {
 
                     Divider()
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("自动重启", isOn: Binding(get: { watchdog.isEnabled }, set: watchdog.setEnabled))
-                            .toggleStyle(.switch)
-                            .disabled(!watchdog.isEnabled && (watchdog.targetURL == nil || (isMT5Selected && (!didScan || existingMT5Rule != nil))))
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Button(watchdog.isEnabled ? "停止守护" : "启动守护") {
+                                watchdog.setEnabled(!watchdog.isEnabled)
+                            }
+                            .disabled(!watchdog.isEnabled && !canEnableGuard)
+                            if watchdog.targetURL != nil {
+                                Button("删除规则…", role: .destructive) { deletion = .appRule }
+                            }
+                        }
                         Text(guardDescription).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
@@ -100,11 +116,66 @@ struct WatchdogPage: View {
                 }
             }
         }
+        .alert(item: $deletion) { rule in
+            Alert(title: Text("删除守护规则？"), message: Text(rule.message),
+                  primaryButton: .destructive(Text("删除规则")) {
+                      switch rule {
+                      case .appRule: watchdog.deleteRule()
+                      case .mt5Rule: changeLegacy(.delete)
+                      }
+                  }, secondaryButton: .cancel(Text("取消")))
+        }
+    }
+
+    private func legacyRuleCard(_ rule: ScheduledTask) -> some View {
+        let isActive = rule.status == .running || rule.status == .loaded
+        let manageable = LegacyMT5Guard.matches(rule)
+        let resumeBlocked = isMT5Selected && watchdog.isEnabled
+        return MonitorCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.shield")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(MonitorTint.accent)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("MT5 守护规则").font(.system(size: 13, weight: .semibold))
+                        Text("\(rule.label) · \(rule.schedule)")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusPill(title: rule.status.rawValue, color: isActive ? MonitorTint.accent : .secondary)
+                }
+
+                HStack {
+                    Button("查看任务") { revealTask(rule.label) }
+                    if manageable {
+                        Button(isActive ? "停止守护" : "恢复守护") {
+                            changeLegacy(isActive ? .stop : .resume)
+                        }
+                        .disabled(legacyBusy || rule.status == .unknown || (!isActive && resumeBlocked))
+                        Button("删除规则…", role: .destructive) { deletion = .mt5Rule }
+                            .disabled(legacyBusy)
+                    }
+                    if legacyBusy { ProgressView().controlSize(.small).accessibilityLabel("正在更新 MT5 守护规则") }
+                }
+                if manageable {
+                    Text(!isActive && resumeBlocked ? "先停止任务台内置的 MT5 守护，再恢复这条规则。"
+                         : "停止这条规则会暂停自动重启和终端健康检查。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var canEnableGuard: Bool {
+        watchdog.targetURL != nil && (!isMT5Selected || (didScan && existingMT5Rule == nil && !legacyBusy))
     }
 
     private var guardDescription: String {
         if isMT5Selected && !didScan { return "正在检查此 Mac 上已有的 MT5 守护规则。" }
-        if isMT5Selected && existingMT5Rule != nil { return "MT5 已由上方的规则守护。" }
+        if isMT5Selected && existingMT5Rule != nil { return "MT5 守护请使用上方的现有规则。" }
+        if watchdog.isEnabled { return "停止守护后，已打开的应用可以继续运行。" }
         return "启用后每 \(Int(Watchdog.checkInterval)) 秒检查一次。应用连续退出约 \(Int(Watchdog.missingGrace)) 秒后自动打开。"
     }
 
@@ -119,9 +190,11 @@ struct WatchdogPage: View {
     }
 
     private var statusDetail: String {
-        if isMT5Selected && existingMT5Rule != nil && !watchdog.isEnabled {
-            if watchdog.status.kind == .running { return "已检测到 MT5 交易终端，守护由上方规则执行。" }
-            if watchdog.status.kind == .idle { return "未检测到 MT5 交易终端。现有规则会按配置检查。" }
+        if isMT5Selected, let rule = existingMT5Rule, !watchdog.isEnabled {
+            if rule.status == .running || rule.status == .loaded {
+                if watchdog.status.kind == .running { return "已检测到 MT5 交易终端，守护由上方规则执行。" }
+                if watchdog.status.kind == .idle { return "未检测到 MT5 交易终端。现有规则会按配置检查。" }
+            }
         }
         return watchdog.status.detail
     }
