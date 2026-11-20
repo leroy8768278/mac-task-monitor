@@ -37,12 +37,6 @@ final class Watchdog: ObservableObject {
     private var operationError: Status?
     private var enabledAt: Date?
 
-    var metaTraderURL: URL? {
-        let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: WatchdogTarget.metaTraderIdentifier)
-        let standard = URL(fileURLWithPath: "/Applications/MetaTrader 5.app", isDirectory: true)
-        return [installed, standard].compactMap { $0 }.first { WatchdogTarget(applicationURL: $0)?.isMetaTrader == true }
-    }
-
     init() {
         checkNow()
         refreshLoop = Task { [weak self] in
@@ -70,11 +64,6 @@ final class Watchdog: ObservableObject {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        select(url)
-    }
-
-    func selectMetaTrader() {
-        guard !isEnabled, let url = metaTraderURL else { return }
         select(url)
     }
 

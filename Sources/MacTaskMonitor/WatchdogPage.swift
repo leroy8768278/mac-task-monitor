@@ -68,9 +68,6 @@ struct WatchdogPage: View {
                             }
                         }
                         Spacer()
-                        if watchdog.metaTraderURL != nil && !isMT5Selected {
-                            Button("选择 MT5") { watchdog.selectMetaTrader() }.disabled(watchdog.isEnabled)
-                        }
                         Button(watchdog.targetURL == nil ? "选取应用…" : "更换…") { watchdog.selectApplication() }
                             .disabled(watchdog.isEnabled)
                     }
