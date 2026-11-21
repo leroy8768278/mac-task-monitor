@@ -51,6 +51,7 @@ struct MonitorMenu: View {
             if !metrics.isEmpty { Text(metrics.joined(separator: " · ")) }
         }
         Button("打开 Mac 任务台") {
+            if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
             openWindow(id: "monitor")
             if #available(macOS 14.0, *) {
                 NSApp.activate()

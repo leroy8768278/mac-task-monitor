@@ -16,6 +16,27 @@ enum MacTaskMonitorEntry {
 private final class MonitorAppDelegate: NSObject, NSApplicationDelegate {
     let runtime = MonitorRuntime()
     let awake = AwakeController()
+    private weak var monitorWindow: NSWindow?
+
+    func trackWindow(_ window: NSWindow) {
+        guard window !== monitorWindow else { return }
+        let center = NotificationCenter.default
+        if let previous = monitorWindow {
+            center.removeObserver(self, name: NSWindow.willCloseNotification, object: previous)
+            center.removeObserver(self, name: NSWindow.didBecomeMainNotification, object: previous)
+        }
+        monitorWindow = window
+        center.addObserver(self, selector: #selector(windowClosing), name: NSWindow.willCloseNotification, object: window)
+        center.addObserver(self, selector: #selector(windowBecameMain), name: NSWindow.didBecomeMainNotification, object: window)
+    }
+
+    @objc private func windowClosing(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    @objc private func windowBecameMain(_ notification: Notification) {
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         runtime.start()
@@ -29,6 +50,27 @@ private final class MonitorAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private struct MonitorWindowReader: NSViewRepresentable {
+    let onAttach: (NSWindow) -> Void
+
+    final class Reader: NSView {
+        var onAttach: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { onAttach?(window) }
+        }
+    }
+
+    func makeNSView(context: Context) -> Reader {
+        let reader = Reader()
+        reader.onAttach = onAttach
+        return reader
+    }
+
+    func updateNSView(_ nsView: Reader, context: Context) {}
+}
+
 @MainActor
 struct MonitorApp: App {
     @NSApplicationDelegateAdaptor(MonitorAppDelegate.self) private var delegate
@@ -37,6 +79,7 @@ struct MonitorApp: App {
     var body: some Scene {
         Window("Mac 任务台", id: "monitor") {
             MonitorWindow(section: $section, runtime: delegate.runtime, awake: delegate.awake)
+                .background(MonitorWindowReader(onAttach: delegate.trackWindow))
                 .frame(minWidth: 790, minHeight: 570)
                 .tint(MonitorTint.accent)
         }
