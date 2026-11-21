@@ -68,8 +68,13 @@ struct InstalledSoftwareSize: Sendable {
 }
 
 enum InstalledSoftwareScanner {
-    static func scan() throws -> InstalledSoftwareSnapshot {
-        try scan(roots: scanRoots(), currentApp: currentAppURL())
+    static func scan(includeExternalVolumes: Bool = false) throws -> InstalledSoftwareSnapshot {
+        try Task.checkCancellation()
+        let roots = localRoots() + (includeExternalVolumes ? externalRoots() : [])
+        let ownBundle = currentAppURL().flatMap { url in
+            includeExternalVolumes || !url.path.hasPrefix("/Volumes/") ? url : nil
+        }
+        return try scan(roots: roots, currentApp: ownBundle)
     }
 
     static func measure(_ app: InstalledSoftware) throws -> InstalledSoftwareSize {
@@ -87,7 +92,12 @@ enum InstalledSoftwareScanner {
 
     static func revalidate(_ app: InstalledSoftware) -> Bool {
         if app.isCurrentApp { return currentAppURL() == app.url && matchesOnDisk(app) }
-        return scanRoots().contains { contains(app, in: $0) } && matchesOnDisk(app)
+        if app.source == .externalApplications {
+            guard let root = externalRoot(containing: app), contains(app, in: root) else { return false }
+        } else {
+            guard localRoots().contains(where: { contains(app, in: $0) }) else { return false }
+        }
+        return matchesOnDisk(app)
     }
 
     static func canMoveToTrash(_ app: InstalledSoftware) -> Bool {
@@ -166,31 +176,50 @@ enum InstalledSoftwareScanner {
         "app", "appex", "bundle", "component", "dext", "framework", "kext", "mpkg", "pkg", "plugin", "prefpane", "xpc"
     ]
 
-    private static func scanRoots() -> [Root] {
-        let fm = FileManager.default
-        let userApps = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
-        let roots = [
+    private static func localRoots() -> [Root] {
+        let userApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
+        var roots = [
             Root("/Applications", .applications),
-            Root(userApps.path, .userApplications),
             Root("/System/Applications", .system),
             Root("/System/Library/CoreServices/Applications", .system),
             Root(finderPath, .system, singleBundle: true),
             // Safari is provided by the system cryptex on newer macOS versions.
             Root("/System/Volumes/Preboot/Cryptexes/App/System/Applications", .system)
         ]
-        let volumes = fm.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeIsLocalKey], options: [.skipHiddenVolumes]) ?? []
-        return roots + volumes.compactMap { url in
-            let components = url.pathComponents
-            guard components.count == 3, components[1] == "Volumes",
-                  (try? url.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) == true,
-                  let fd = try? directory(at: url) else { return nil }
-            defer { close(fd) }
-            var mount = statfs()
-            guard fstatfs(fd, &mount) == 0,
-                  mount.f_flags & UInt32(MNT_LOCAL) != 0,
-                  mount.f_flags & UInt32(MNT_ROOTFS) == 0 else { return nil }
-            return Root(url.appendingPathComponent("Applications", isDirectory: true).path, .externalApplications)
+        if !userApps.path.hasPrefix("/Volumes/") { roots.insert(Root(userApps.path, .userApplications), at: 1) }
+        return roots
+    }
+
+    private static func externalRoots() -> [Root] {
+        // Query cached mount metadata without opening the volumes during discovery.
+        var mounts: UnsafeMutablePointer<statfs>?
+        let count = getmntinfo_r_np(&mounts, MNT_NOWAIT)
+        defer { free(mounts) }
+        guard count > 0, let mounts else { return [] }
+        return UnsafeBufferPointer(start: mounts, count: Int(count)).compactMap { externalRoot(for: $0) }
+    }
+
+    private static func externalRoot(containing app: InstalledSoftware) -> Root? {
+        let components = app.url.pathComponents
+        guard components.count >= 5, components[1] == "Volumes", components[3] == "Applications",
+              components[2] != ".", components[2] != ".." else { return nil }
+        let mountPath = "/Volumes/\(components[2])"
+        var mount = statfs()
+        guard statfs(mountPath, &mount) == 0,
+              let root = externalRoot(for: mount), root.url.path == mountPath + "/Applications" else { return nil }
+        return root
+    }
+
+    private static func externalRoot(for mount: statfs) -> Root? {
+        guard mount.f_flags & UInt32(MNT_LOCAL) != 0,
+              mount.f_flags & UInt32(MNT_ROOTFS | MNT_DONTBROWSE) == 0 else { return nil }
+        let mountPath = withUnsafeBytes(of: mount.f_mntonname) {
+            String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
         }
+        let components = mountPath.split(separator: "/")
+        guard mountPath.hasPrefix("/Volumes/"), components.count == 2,
+              !components[1].hasPrefix(".") else { return nil }
+        return Root(mountPath + "/Applications", .externalApplications)
     }
 
     private static func currentAppURL() -> URL? {
@@ -278,19 +307,21 @@ enum InstalledSoftwareScanner {
             throw ScanError.invalidBundle
         }
         let identifier = property("CFBundleIdentifier", in: plist)
-        if let packageType = property("CFBundlePackageType", in: plist), packageType != "APPL" {
-            guard packageType == "FNDR", source == .system, url.path == finderPath, identifier == "com.apple.finder" else {
-                throw ScanError.invalidBundle
-            }
-        }
-
         var executableURL: URL?
         var executableStamp: InstalledSoftware.FileStamp?
+        var hasRunnableExecutable = false
         if let bin = try? childDirectory("MacOS", in: contents) {
             defer { close(bin) }
             if let actual = try? childInfo(executable, in: bin), kind(actual) == S_IFREG, actual.st_dev == info.st_dev {
                 executableURL = url.appendingPathComponent("Contents/MacOS", isDirectory: true).appendingPathComponent(executable)
                 executableStamp = InstalledSoftware.FileStamp(actual)
+                hasRunnableExecutable = actual.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH) != 0
+            }
+        }
+        if let packageType = property("CFBundlePackageType", in: plist), packageType != "APPL" {
+            // Some standalone apps in protected system directories carry a service-specific package type.
+            guard source == .system, identifier != nil, hasRunnableExecutable else {
+                throw ScanError.invalidBundle
             }
         }
         let localizedName = localize ? try localizedName(in: contents, volume: info.st_dev, fallback: property("CFBundleDevelopmentRegion", in: plist)) : nil

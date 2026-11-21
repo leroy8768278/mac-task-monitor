@@ -5,6 +5,7 @@ struct InstalledSoftwarePage: View {
     @State private var snapshot: InstalledSoftwareSnapshot?
     @State private var eligibility: [InstalledSoftware.ID: InstalledSoftwareUninstaller.Eligibility] = [:]
     @State private var query = ""
+    @State private var includeExternalVolumes = false
     @State private var selection: InstalledSoftware.ID?
     @State private var scanGeneration = 0
     @State private var isScanning = false
@@ -59,6 +60,9 @@ struct InstalledSoftwarePage: View {
                 }
                 .padding(8)
                 .background(MonitorTint.card, in: RoundedRectangle(cornerRadius: 7))
+                Toggle("包含外接磁盘", isOn: $includeExternalVolumes)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
                 if let snapshot {
                     Text("\(visible.count) / \(snapshot.apps.count) 款软件")
                         .monospacedDigit()
@@ -98,6 +102,7 @@ struct InstalledSoftwarePage: View {
             }
         }
         .task(id: scanGeneration) { await loadSnapshot() }
+        .onChange(of: includeExternalVolumes) { _ in requestRefresh() }
         .onChange(of: query) { _ in
             if let selection, !visibleApps.contains(where: { $0.id == selection }) {
                 self.selection = nil
@@ -189,7 +194,10 @@ struct InstalledSoftwarePage: View {
         isScanning = true
         scanError = nil
         defer { if generation == scanGeneration { isScanning = false } }
-        let scan = Task.detached(priority: .utility) { try InstalledSoftwareScanner.scan() }
+        let scanExternal = includeExternalVolumes
+        let scan = Task.detached(priority: .utility) {
+            try InstalledSoftwareScanner.scan(includeExternalVolumes: scanExternal)
+        }
         do {
             let result = try await withTaskCancellationHandler {
                 try await scan.value
