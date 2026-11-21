@@ -71,10 +71,7 @@ enum InstalledSoftwareScanner {
     static func scan(includeExternalVolumes: Bool = false) throws -> InstalledSoftwareSnapshot {
         try Task.checkCancellation()
         let roots = localRoots() + (includeExternalVolumes ? externalRoots() : [])
-        let ownBundle = currentAppURL().flatMap { url in
-            includeExternalVolumes || !url.path.hasPrefix("/Volumes/") ? url : nil
-        }
-        return try scan(roots: roots, currentApp: ownBundle)
+        return try scan(roots: roots, currentApp: currentAppURL())
     }
 
     static func measure(_ app: InstalledSoftware) throws -> InstalledSoftwareSize {
@@ -137,6 +134,7 @@ enum InstalledSoftwareScanner {
     }
 
     private struct Inventory {
+        let currentAppPath: String?
         var apps: [InstalledSoftware] = []
         var directories: Set<DiskObject> = []
         var bundles: Set<DiskObject> = []
@@ -229,19 +227,8 @@ enum InstalledSoftwareScanner {
     }
 
     private static func scan(roots: [Root], currentApp: URL?) throws -> InstalledSoftwareSnapshot {
-        var inventory = Inventory()
+        var inventory = Inventory(currentAppPath: currentApp?.path)
         var notices: [String] = []
-        if let currentApp {
-            do {
-                let fd = try directory(at: currentApp)
-                defer { close(fd) }
-                let app = try inspect(fd, url: currentApp, source: .currentApp)
-                inventory.bundles.insert(DiskObject(app.id))
-                inventory.apps.append(app)
-            } catch {
-                notices.append("无法读取当前应用的软件包信息。")
-            }
-        }
         for root in roots {
             try Task.checkCancellation()
             do {
@@ -283,7 +270,8 @@ enum InstalledSoftwareScanner {
                 let child = try childDirectory(entry, in: fd)
                 defer { close(child) }
                 if extensionName == "app" {
-                    let app = try inspect(child, url: destination, source: source)
+                    let appSource: InstalledSoftware.Source = destination.path == inventory.currentAppPath ? .currentApp : source
+                    let app = try inspect(child, url: destination, source: appSource)
                     if app.id.volumeDevice == volume, inventory.bundles.insert(DiskObject(app.id)).inserted {
                         inventory.apps.append(app)
                     }
