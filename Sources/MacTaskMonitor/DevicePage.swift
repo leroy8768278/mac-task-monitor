@@ -54,6 +54,8 @@ struct DevicePage: View {
                 Divider().padding(.horizontal, 16)
                 summaryLink(.processes, summary: "查看 CPU、内存与 PID")
                 Divider().padding(.horizontal, 16)
+                summaryLink(.installedSoftware, summary: "查看安装位置与占用空间")
+                Divider().padding(.horizontal, 16)
                 summaryLink(.tasks, summary: taskSummary)
                 Divider().padding(.horizontal, 16)
                 summaryLink(.watchdog, summary: watchdogSummary)

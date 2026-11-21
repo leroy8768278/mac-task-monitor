@@ -101,7 +101,7 @@ struct MonitorApp: App {
 }
 
 enum MonitorSection: String, Identifiable, CaseIterable {
-    case device, runningApps, processes, tasks, watchdog, tools
+    case device, runningApps, processes, installedSoftware, tasks, watchdog, tools
 
     var id: Self { self }
 
@@ -109,6 +109,7 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "设备状态"
         case .processes: "运行进程"
+        case .installedSoftware: "已装软件"
         case .runningApps: "运行软件"
         case .tasks: "计划任务"
         case .watchdog: "应用守护"
@@ -120,6 +121,7 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "waveform.path.ecg"
         case .processes: "list.bullet.rectangle"
+        case .installedSoftware: "shippingbox"
         case .runningApps: "macwindow.on.rectangle"
         case .tasks: "calendar.badge.clock"
         case .watchdog: "shield.lefthalf.filled"
@@ -131,6 +133,7 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         switch self {
         case .device: "1"
         case .processes: "4"
+        case .installedSoftware: "7"
         case .runningApps: "6"
         case .tasks: "2"
         case .watchdog: "3"

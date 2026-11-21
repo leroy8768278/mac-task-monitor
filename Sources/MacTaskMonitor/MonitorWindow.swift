@@ -39,6 +39,10 @@ struct MonitorWindow: View {
             ProcessesPage()
                 .padding(.horizontal, 24)
                 .padding(.vertical, 23)
+        case .installedSoftware:
+            InstalledSoftwarePage()
+                .padding(.horizontal, 24)
+                .padding(.vertical, 23)
         case .runningApps:
             RunningAppsPage()
                 .padding(.horizontal, 24)

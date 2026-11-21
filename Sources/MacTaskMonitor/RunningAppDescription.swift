@@ -6,8 +6,12 @@ struct RunningAppDescription: Sendable {
     let sourceURL: URL?
 
     static func resolve(_ app: RunningApp) -> Self {
-        let bundle = localBundle(for: app)
-        let identifier = app.bundleIdentifier ?? bundle?.bundleIdentifier
+        resolve(name: app.name, bundleIdentifier: app.bundleIdentifier, bundleURL: app.bundleURL)
+    }
+
+    static func resolve(name: String, bundleIdentifier: String?, bundleURL: URL?) -> Self {
+        let bundle = localBundle(at: bundleURL, matching: bundleIdentifier)
+        let identifier = bundleIdentifier ?? bundle?.bundleIdentifier
 
         if let key = identifier?.lowercased(), let purpose = knownPurposes[key] {
             let reference = references[key]
@@ -15,7 +19,7 @@ struct RunningAppDescription: Sendable {
                         sourceURL: reference.flatMap { URL(string: $0.url) })
         }
 
-        if let bundle, let purpose = localPurpose(bundle, appName: app.name) {
+        if let bundle, let purpose = localPurpose(bundle, appName: name) {
             return Self(purpose: purpose, sourceLabel: "本机软件包提供的简介", sourceURL: nil)
         }
 
@@ -25,16 +29,15 @@ struct RunningAppDescription: Sendable {
                         sourceLabel: "本机软件包的 App Store 类别", sourceURL: nil)
         }
 
-        return Self(purpose: "暂未确认「\(app.name)」的具体用途。",
-                    sourceLabel: identifier.map { "本机软件包标识 \($0)" } ?? "本机运行应用名称",
+        return Self(purpose: "暂未确认「\(name)」的具体用途。",
+                    sourceLabel: identifier.map { "本机软件包标识 \($0)" } ?? "本机软件名称",
                     sourceURL: nil)
     }
 
-    private static func localBundle(for app: RunningApp) -> Bundle? {
-        guard let url = app.bundleURL, url.isFileURL, url.pathExtension.lowercased() == "app",
+    private static func localBundle(at url: URL?, matching identifier: String?) -> Bundle? {
+        guard let url, url.isFileURL, url.pathExtension.lowercased() == "app",
               let bundle = Bundle(url: url) else { return nil }
-        if let liveIdentifier = app.bundleIdentifier,
-           bundle.bundleIdentifier?.caseInsensitiveCompare(liveIdentifier) != .orderedSame {
+        if let identifier, bundle.bundleIdentifier?.caseInsensitiveCompare(identifier) != .orderedSame {
             return nil
         }
         return bundle
@@ -106,6 +109,17 @@ struct RunningAppDescription: Sendable {
         "com.bot.neotix.doubao": "豆包桌面应用，用于 AI 对话、提问和辅助处理文本。",
         "com.bytedance.macos.feishu": "飞书桌面客户端，用于团队沟通、开会和协作文档。",
         "com.microsoft.vscode": "代码编辑器，用于编辑项目文件、调试代码和通过扩展支持不同开发环境。",
+        "com.microsoft.word": "撰写、排版和审阅文档，支持批注和修订。",
+        "com.microsoft.excel": "通过电子表格整理数据、使用公式计算和制作图表。",
+        "com.microsoft.powerpoint": "制作和播放演示文稿，可在幻灯片中编排文字、图表和视频。",
+        "com.apple.iwork.pages": "创建、排版和协作编辑文稿。",
+        "com.apple.iwork.numbers": "使用表格和公式整理数据，并通过图表呈现结果。",
+        "com.apple.iwork.keynote": "设计幻灯片并播放演示文稿。",
+        "com.google.android.studio": "Android 应用开发环境，用于编写代码、构建应用，以及在模拟器或设备上调试。",
+        "com.sublimetext.4": "编辑文本和源代码，可跨文件搜索和批量修改。",
+        "org.mozilla.firefox": "网页浏览器，用于访问网站、管理标签页和书签。",
+        "org.videolan.vlc": "媒体播放器，用于播放本地音视频文件和网络媒体流。",
+        "ru.keepcoder.telegram": "Telegram 的 Mac 客户端，用于收发消息、共享文件和浏览频道。",
         "com.apple.safari": "Apple 的网页浏览器，用于浏览网站、管理标签页和书签。",
         "com.apple.terminal": "macOS 的命令行终端，用于运行 shell、脚本和命令行工具，也可通过 SSH 连接远程计算机。",
         "com.apple.systempreferences": "管理 macOS 系统设置，包括网络、显示器、账户及隐私权限。",
