@@ -8,12 +8,15 @@ struct KeepAwakeToggle: View {
     }
 }
 
+@MainActor
 struct ToolsPage: View {
     @ObservedObject var awake: AwakeController
+    @State private var isLocking = false
+    @State private var lockError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeading(title: MonitorSection.tools.title, subtitle: "管理 Mac 的空闲休眠与显示器") { EmptyView() }
+            PageHeading(title: MonitorSection.tools.title, subtitle: "管理 Mac 的锁屏、空闲休眠和显示器") { EmptyView() }
             MonitorCard {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
@@ -24,6 +27,7 @@ struct ToolsPage: View {
                         KeepAwakeToggle(awake: awake)
                             .toggleStyle(.switch)
                             .font(.headline)
+                            .disabled(isLocking)
                     }
                     Text("开启后，Mac 和显示器在空闲时保持唤醒。关闭窗口后开关继续生效，关闭开关或退出任务台即可恢复系统原有的休眠设置。")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -33,6 +37,48 @@ struct ToolsPage: View {
                             .font(.subheadline).foregroundStyle(.orange)
                     }
                 }
+            }
+            MonitorCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("锁屏", systemImage: "lock")
+                        .font(.headline)
+                    HStack(spacing: 10) {
+                        Button("一键锁屏") { lockScreen(turnOffDisplay: false) }
+                            .help("锁定当前会话")
+                        Button("一键锁屏并熄屏") { lockScreen(turnOffDisplay: true) }
+                            .help("锁定当前会话后让显示器休眠")
+                        if isLocking {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("正在锁屏")
+                        }
+                    }
+                    .disabled(isLocking)
+                    Text("一键锁屏会保留「防止休眠与熄屏」的状态。一键锁屏并熄屏会自动关闭已开启的开关。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let lockError {
+                        Label(lockError, systemImage: "exclamationmark.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func lockScreen(turnOffDisplay: Bool) {
+        guard !isLocking else { return }
+        isLocking = true
+        lockError = nil
+        Task { @MainActor in
+            defer { isLocking = false }
+            do {
+                try await ScreenLockController.perform(turnOffDisplay: turnOffDisplay, awake: awake)
+            } catch {
+                lockError = error.localizedDescription
             }
         }
     }
