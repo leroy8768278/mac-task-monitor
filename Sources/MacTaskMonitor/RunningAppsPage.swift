@@ -283,7 +283,7 @@ private struct RunningAppDetails: View {
                         .help(app.name)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 8)
-                    Button("强制关闭…", role: .destructive, action: requestClose)
+                    Button("强制关闭", role: .destructive, action: requestClose)
                         .disabled(isClosing)
                         .fixedSize()
                 }
