@@ -35,6 +35,8 @@ struct MonitorWindow: View {
                            taskSummary: taskSummary, watchdogSummary: watchdogSummary,
                            navigate: { navigate($0) })
             }
+        case .cleanup:
+            scrollPage { CleanupPage(model: runtime.cleanup, health: runtime.health) }
         case .processes:
             ProcessesPage()
                 .padding(.horizontal, 24)

@@ -50,6 +50,8 @@ struct DevicePage: View {
             }
 
             VStack(spacing: 0) {
+                summaryLink(.cleanup, summary: "清理应用缓存与释放内存")
+                Divider().padding(.horizontal, 16)
                 summaryLink(.runningApps, summary: "查看软件状态与资源占用")
                 Divider().padding(.horizontal, 16)
                 summaryLink(.processes, summary: "查看 CPU、内存与 PID")

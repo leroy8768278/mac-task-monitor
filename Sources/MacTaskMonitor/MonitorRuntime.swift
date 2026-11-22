@@ -11,6 +11,7 @@ final class MonitorRuntime: ObservableObject {
     @Published private(set) var legacyGuardError: String?
 
     let watchdog = Watchdog()
+    let cleanup = CleanupModel()
 
     private let healthMonitor = HealthMonitor()
     private var healthLoop: Task<Void, Never>?
