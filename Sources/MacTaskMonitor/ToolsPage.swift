@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct KeepAwakeToggle: View {
@@ -84,31 +85,63 @@ struct ToolsPage: View {
     }
 }
 
-struct MonitorMenu: View {
-    @Environment(\.openWindow) private var openWindow
-    @ObservedObject var runtime: MonitorRuntime
-    @ObservedObject var awake: AwakeController
+@MainActor
+final class MonitorMenu: NSObject, NSMenuDelegate {
+    let menu = NSMenu(title: "Mac 任务台")
+    private let runtime: MonitorRuntime
+    private let awake: AwakeController
+    private let openMonitor: () -> Void
+    private let openSettings: () -> Void
 
-    var body: some View {
+    init(runtime: MonitorRuntime, awake: AwakeController,
+         openMonitor: @escaping () -> Void, openSettings: @escaping () -> Void) {
+        self.runtime = runtime
+        self.awake = awake
+        self.openMonitor = openMonitor
+        self.openSettings = openSettings
+        super.init()
+        menu.delegate = self
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
         if let health = runtime.health {
             let cpu = health.cpuUsage.map { "CPU \($0.formatted(.percent.precision(.fractionLength(0))))" }
             let temperature = health.temperatureCelsius.map { "核心最高 \($0.formatted(.number.precision(.fractionLength(1)))) °C" }
             let metrics = [cpu, temperature].compactMap { $0 }
-            if !metrics.isEmpty { Text(metrics.joined(separator: " · ")) }
-        }
-        Button("打开 Mac 任务台") {
-            if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
-            openWindow(id: "monitor")
-            if #available(macOS 14.0, *) {
-                NSApp.activate()
-            } else {
-                NSApp.activate(ignoringOtherApps: true)
+            if !metrics.isEmpty {
+                menu.addItem(withTitle: metrics.joined(separator: " · "), action: nil, keyEquivalent: "").isEnabled = false
             }
         }
-        Divider()
-        KeepAwakeToggle(awake: awake)
-        if let error = awake.errorMessage { Text(error) }
-        Divider()
-        Button("退出 Mac 任务台") { NSApp.terminate(nil) }
+
+        addItem("打开 Mac 任务台", action: #selector(showMonitor))
+        addItem(MonitorSection.settings.title, action: #selector(showSettings))
+        menu.addItem(.separator())
+        let keepAwake = addItem("防止休眠与熄屏", action: #selector(toggleAwake))
+        keepAwake.state = awake.isEnabled ? .on : .off
+        if let error = awake.errorMessage {
+            menu.addItem(withTitle: error, action: nil, keyEquivalent: "").isEnabled = false
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "退出 Mac 任务台", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "").target = NSApp
+    }
+
+    @discardableResult
+    private func addItem(_ title: String, action: Selector) -> NSMenuItem {
+        let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func showMonitor() {
+        openMonitor()
+    }
+
+    @objc private func showSettings() {
+        openSettings()
+    }
+
+    @objc private func toggleAwake() {
+        awake.setEnabled(!awake.isEnabled)
     }
 }

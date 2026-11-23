@@ -65,6 +65,8 @@ struct MonitorWindow: View {
             }
         case .tools:
             scrollPage { ToolsPage(awake: awake) }
+        case .settings:
+            scrollPage { SettingsPage() }
         }
     }
 
