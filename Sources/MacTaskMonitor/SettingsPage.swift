@@ -108,7 +108,7 @@ struct SettingsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeading(title: "设置", subtitle: "管理 Mac 任务台的启动方式") { EmptyView() }
+            PageHeading(title: MonitorSection.settings.title, subtitle: "管理 Mac 任务台的启动方式") { EmptyView() }
 
             MonitorCard {
                 VStack(alignment: .leading, spacing: 12) {

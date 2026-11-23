@@ -217,7 +217,7 @@ enum MonitorSection: String, Identifiable, CaseIterable {
         case .tasks: "计划任务"
         case .watchdog: "应用守护"
         case .tools: "常用工具"
-        case .settings: "设置"
+        case .settings: "软件设置"
         }
     }
 
